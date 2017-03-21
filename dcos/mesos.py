@@ -72,6 +72,7 @@ class DCOSClient(object):
 
         return urllib.parse.urljoin(self._dcos_url, path)
 
+    # 根据path参数，构造master_url的api endpoint
     def master_url(self, path):
         """ Create a master URL
 
@@ -85,6 +86,7 @@ class DCOSClient(object):
                     urllib.parse.urljoin(self._dcos_url, 'mesos/'))
         return urllib.parse.urljoin(base_url, path)
 
+    # 根据path参数，构造slave_url的api endpoint
     def slave_url(self, slave_id, private_url, path):
         """Create a slave URL
 
@@ -144,6 +146,7 @@ class DCOSClient(object):
         url = self.master_url('master/state-summary')
         return http.get(url, timeout=self._timeout).json()
 
+    # 根据slave id file/read.json api读取文件内容
     def slave_file_read(self, slave_id, private_url, path, offset, length):
         """See the master_file_read() docs
 
@@ -253,6 +256,7 @@ class DCOSClient(object):
         url = self.get_dcos_url('metadata')
         return http.get(url, timeout=self._timeout).json()
 
+    # 浏览目录文件，这个函数的位置最好放在slave_file_read下面
     def browse(self, slave, path):
         """ GET /files/browse.json
 
@@ -368,6 +372,8 @@ class Master(object):
         else:
             return slaves[0]
 
+    # 根据过滤条件fltr拿到所有的task
+    # 内部调用self.tasks()函数，tasks()/frameworks api遍历framework拿到相关的task
     def task(self, fltr, completed=False):
         """Returns the task with `fltr` in its ID.  Raises a DCOSException if
         there is not exactly one such task.
@@ -417,7 +423,7 @@ class Master(object):
         :returns: Those slaves that have `fltr` in their 'id'
         :rtype: [Slave]
         """
-
+        # 列表生成器，slave不大的话时间复杂度不高。
         return [self._slave_obj(slave)
                 for slave in self.state()['slaves']
                 if fltr in slave['id']]
@@ -444,6 +450,7 @@ class Master(object):
         tasks = []
         # get all frameworks
         for framework in self._framework_dicts(True, True, True):
+            # _merge()，congframeworks中拿到tasks和completed_tasks
             for task in _merge(framework, keys):
                 state = task.get("state")
                 if completed and state not in COMPLETED_TASK_STATES:
@@ -454,9 +461,10 @@ class Master(object):
                         fnmatch.fnmatchcase(task['id'], fltr):
                     task = self._framework_obj(framework).task(task['id'])
                     tasks.append(task)
-
+        # 这里没有考虑task的大小，
         return tasks
 
+    # 在函数内部编写新的函数，有什么优缺点和使用场景
     def get_container_id(self, task_id):
         """Returns the container ID for a task ID matching `task_id`
 
@@ -614,6 +622,7 @@ class Slave(object):
         """
 
         if not self._state:
+            # self['id']如何理解
             self._state = DCOSClient().get_slave_state(self['id'],
                                                        self.http_url())
         return self._state
@@ -648,6 +657,7 @@ class Slave(object):
                  for framework in self._framework_dicts()]
         return itertools.chain(*iters)
 
+    # __getitem__()和self['id']等用法相互配合
     def __getitem__(self, name):
         """Support the slave[attr] syntax
 
@@ -803,7 +813,7 @@ class Task(object):
 
         return self._task[name]
 
-
+# 重点
 class MesosFile(object):
     """File-like object that is backed by a remote slave or master file.
     Uses the files/read.json endpoint.
@@ -840,7 +850,7 @@ class MesosFile(object):
         self._task = task
         self._path = path
         self._dcos_client = dcos_client or DCOSClient()
-        self._cursor = 0
+        self._cursor = 0 #默认文件游标是0
 
     def size(self):
         """Size of the file
@@ -885,6 +895,7 @@ class MesosFile(object):
 
         return self._cursor
 
+    # 函数厉害啊，分块思想、循环思想
     def read(self, length=None):
         """Reads up to `length` bytes, or the entire file if `length` is None.
 
@@ -917,6 +928,7 @@ class MesosFile(object):
             # executor.type is currently used only by pods. All tasks in a pod
             # share an executor, so if this is a pod, get the task logs instead
             # of the executor logs
+            # 似乎没有计算slave_id framework_id这些目录
             if executor.get('type') == "DEFAULT":
                 task_id = self._task.dict().get('id')
                 return directory + '/tasks/{}/'.format(task_id) + self._path
@@ -937,9 +949,6 @@ class MesosFile(object):
         :returns: GET parameters
         :rtype: dict
         """
-
-        if offset is None:
-            offset = self._cursor
 
         return {
             'path': self._host_path(),

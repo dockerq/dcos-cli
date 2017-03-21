@@ -104,7 +104,7 @@ def _stream_files(curr_header, fn, mesos_files):
 
     return curr_header, reachable_files
 
-
+# 输出读取的文件，并更新头
 def _output(curr_header, output_header, header, lines):
     """Prints a sequence of lines.  If `header` is different than
     `curr_header`, first print the header.
@@ -158,6 +158,7 @@ def _read_last_lines(num_lines, mesos_file):
     data = ''
     while True:
         # fetch data
+        # seek函数何解
         mesos_file.seek(start)
         data = mesos_file.read(end - start) + data
 
@@ -165,6 +166,7 @@ def _read_last_lines(num_lines, mesos_file):
         data_tmp = _strip_trailing_newline(data)
         lines = data_tmp.split('\n')
         if len(lines) > num_lines:
+            #注意切片的方向
             ret = lines[-num_lines:]
             break
         elif start == 0:
@@ -191,10 +193,11 @@ def _read_rest(mesos_file):
     if data == '':
         return []
     else:
+        # 去掉尾部换行符，方便下文分割
         data_tmp = _strip_trailing_newline(data)
         return data_tmp.split('\n')
 
-
+# 去掉尾部换行符
 def _strip_trailing_newline(s):
     """Returns a modified version of the string with the last character
     truncated if it's a newline.
