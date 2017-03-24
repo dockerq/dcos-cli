@@ -102,10 +102,11 @@ class DCOSClient(object):
         :rtype: str
 
         """
-
+        # 如果存在master url，直接从master url构造过去
         if self._mesos_master_url:
             return urllib.parse.urljoin(private_url, path)
         else:
+            # 否则从 admin router的url构造过去
             return urllib.parse.urljoin(self._dcos_url,
                                         'slave/{}/{}'.format(slave_id, path))
 
@@ -117,6 +118,7 @@ class DCOSClient(object):
         """
 
         url = self.master_url('master/state.json')
+        # 非常大的一个json
         return http.get(url, timeout=self._timeout).json()
 
     def get_slave_state(self, slave_id, private_url):
@@ -708,7 +710,7 @@ class Framework(object):
         :returns: Task
         :rtype: Task
         """
-
+        # 每个framework的task id都是不一样的，这一点很重要
         if task['id'] not in self._tasks:
             self._tasks[task['id']] = Task(task, self._master)
         return self._tasks[task['id']]
@@ -813,7 +815,12 @@ class Task(object):
 
         return self._task[name]
 
-# 重点
+# 重点：使用MesosFile这个类来专门处理文件读取操作
+# 里面有task， path这些属性，可以获取文件size，然后
+# 自己输入offset，length等参数来读取文件
+# 我们在进行开发时可以抽象出问题中的基本类，然后在类中赋予
+# 一些操作，为了实现更高级、复杂的功能，可以新建抽象类来从
+# 更高的维度处理数据
 class MesosFile(object):
     """File-like object that is backed by a remote slave or master file.
     Uses the files/read.json endpoint.
@@ -833,7 +840,8 @@ class MesosFile(object):
     :type dcos_client: DCOSClient | None
 
     """
-
+    # MesosFile的设计是既可以读取slave的某个文件，也可以读取task的文件。使用slave作为入口点
+    # 如果是task，将task.slave()传给slave
     def __init__(self, path, task=None, slave=None, dcos_client=None):
         if task and slave:
             raise ValueError(
@@ -849,6 +857,8 @@ class MesosFile(object):
 
         self._task = task
         self._path = path
+        # dcos_client之所以可以直接生成是因为内部通过文件直接配置了
+        # 需要的配置
         self._dcos_client = dcos_client or DCOSClient()
         self._cursor = 0 #默认文件游标是0
 
@@ -876,6 +886,7 @@ class MesosFile(object):
         :rtype: None
         """
 
+        # whence表示从那个位置开始设置游标点
         if whence == os.SEEK_SET:
             self._cursor = 0 + offset
         elif whence == os.SEEK_CUR:
@@ -896,6 +907,15 @@ class MesosFile(object):
         return self._cursor
 
     # 函数厉害啊，分块思想、循环思想
+    # 本质上还是调用了DCOSClient()里面的
+    #               slave_file_read()
+    #               master_file_read()方法
+    # 只是里面的参数被层层包装了
+    # length=None什么都不会读，但是在应用场景中length不会是None
+    """
+    Problem:这个函数我没有看懂，因为自己根据api和path以及length参数读到的数据是空
+    可能是我的api和参数不正确，因为我的api构造是从mesos ui上找的，不一定正确
+    """
     def read(self, length=None):
         """Reads up to `length` bytes, or the entire file if `length` is None.
 
@@ -908,7 +928,10 @@ class MesosFile(object):
         data = ''
         while length is None or length - len(data) > 0:
             chunk_length = -1 if length is None else length - len(data)
+            # 按chunk大小来读取文件，这里的‘大小’是字符的长度。
+            # 在不同的需求和内部实现中，这里的chunk可以是文件的size，时间范围等
             chunk = self._fetch_chunk(chunk_length)
+            # chunk == ‘’表示文件没有内容
             if chunk == '':
                 break
             data += chunk
@@ -928,11 +951,13 @@ class MesosFile(object):
             # executor.type is currently used only by pods. All tasks in a pod
             # share an executor, so if this is a pod, get the task logs instead
             # of the executor logs
-            # 似乎没有计算slave_id framework_id这些目录
+            # 似乎没有计算slave_id framework_id这些目录-直接通过directory()获取了
+            # 而不是通过参数构建
             if executor.get('type') == "DEFAULT":
                 task_id = self._task.dict().get('id')
                 return directory + '/tasks/{}/'.format(task_id) + self._path
             else:
+                # 并没有指定读stderr还是stdout，难道在_path里面
                 return directory + '/' + self._path
         else:
             return self._path
@@ -956,6 +981,8 @@ class MesosFile(object):
             'length': length
         }
 
+    # _fetch_chunk函数是重点
+    # 默认从offset=None（文件第一个字符开始）读
     def _fetch_chunk(self, length, offset=None):
         """Fetch data from files/read.json
 
@@ -985,10 +1012,13 @@ class MesosFile(object):
         :rtype: dict
         """
 
+        # 如果task或者slave存在（task/slave都在slave上）
+        # 从slave上读取内容
         if self._slave:
             return self._dcos_client.slave_file_read(self._slave['id'],
                                                      self._slave.http_url(),
                                                      **params)
+        # 否则从master上读取内容
         else:
             return self._dcos_client.master_file_read(**params)
 
@@ -1109,6 +1139,9 @@ class TaskIO(object):
         # exiting.
         self.exception = None
 
+    # 这个函数要好好看看，如何在本地和远程用tty执行代码和输出
+    # 用到了线程的知识
+    # signal
     def run(self):
         """Run the helper threads in this class which enable streaming
         of STDIN/STDOUT/STDERR between the CLI and the Mesos Agent API.
@@ -1183,6 +1216,8 @@ class TaskIO(object):
         if self.interactive:
             # Collects input from STDIN and puts
             # it in the input_queue as data messages.
+            # 把多个函数放到线程队列中，然后用一个封装函数执行线程收集异常，并且捕获输出
+            # 然后用多线程执行县城队列里的函数
             thread = threading.Thread(
                 target=self._thread_wrapper,
                 args=(self._input_thread,))
@@ -1190,7 +1225,7 @@ class TaskIO(object):
             thread.start()
 
             # Prepares heartbeat control messages and
-            # puts them in the input queueaat a specific
+            # puts them in the input queue at a specific
             # heartbeat interval.
             thread = threading.Thread(
                  target=self._thread_wrapper,
@@ -1408,6 +1443,7 @@ class TaskIO(object):
         self.input_queue.put(self.encoder.encode(message))
         self.input_queue.put(None)
 
+    # 从队列拿到值并且处理，值得借鉴
     def _output_thread(self):
         """Reads from the output_queue and writes the data
         to the appropriate STDOUT or STDERR.

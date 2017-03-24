@@ -47,7 +47,8 @@ def log_files(mesos_files, follow, lines):
         # pipe.  So if we don't flush, our --follow tests, which use a
         # pipe, never see the data
         sys.stdout.flush()
-
+        # 调用_stream_files函数，通过mesos_file读取内容然后返回
+        # 更新后的mesos_file,这个设计值得借鉴
         curr_header, mesos_files = _stream_files(curr_header,
                                                  _read_rest,
                                                  mesos_files)
