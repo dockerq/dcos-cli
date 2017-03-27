@@ -159,7 +159,7 @@ def _read_last_lines(num_lines, mesos_file):
     data = ''
     while True:
         # fetch data
-        # seek函数何解
+        # 设置读取文件的位置
         mesos_file.seek(start)
         data = mesos_file.read(end - start) + data
 
@@ -265,7 +265,8 @@ def logging_strategy():
         return strategy
 
     try:
-        strategy = response['uiConfiguration']['plugins']['mesos']['logging-strategy']  # noqa: ignore=F403,E501
+        # noqa: ignore=F403,E501
+        strategy = response['uiConfiguration']['plugins']['mesos']['logging-strategy']
     except Exception:
         pass
 

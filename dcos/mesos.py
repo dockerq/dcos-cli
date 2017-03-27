@@ -1554,3 +1554,15 @@ def _merge(d, keys):
     """
 
     return itertools.chain(*[d[k] for k in keys])
+
+def testmf(file_name=None, task_id=None):
+    if not file_name:
+        file_name = 'stderr'
+    if not task_id:
+        task_id = 'linkercmi_cmi_cmiserver.a3824439-0862-11e7-8198-024275f3c35b'
+    dcos_client = DCOSClient()
+    master = Master(dcos_client.get_master_state())
+    task = master.task(task_id)
+    task = Task(task, master)
+    mf = MesosFile(path=file_name, task=task)
+    return mf
