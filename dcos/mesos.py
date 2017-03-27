@@ -974,7 +974,8 @@ class MesosFile(object):
         :returns: GET parameters
         :rtype: dict
         """
-
+        if offset is None:
+            offset = self._cursor
         return {
             'path': self._host_path(),
             'offset': offset,
